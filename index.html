@@ -1,0 +1,283 @@
+<html>
+<head>
+	<script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+	<script src="js/findr.js"></script>
+	<script src="js/binding.js"></script>
+	
+	<style>
+		body { margin: 0; }
+		.clear {clear:both;}
+		.center {margin:0 auto;}
+		.center-text {text-align: center;}
+
+		a {cursor:pointer;}
+		*:focus {
+			outline: none;
+		}
+
+		table thead tr th { text-align: left; }
+
+		.container {width:50%;max-width:800px;}
+
+		button {background: #3e7ac3;color: white;border: 0;padding:8px 12px;cursor: pointer; }
+		button:hover, button:active {background: #094690;color: white;border: 0; }
+
+		.row {position:relative;}
+		.row .col.s4 {width:33%;float:left;}
+		
+		input { background: transparent;border:0;border-bottom:1px solid gray; }
+		input:active, input:focus {border-bottom:1px solid darkblue;}
+		.labeled-input {position:relative;margin: 8px;}
+		.labeled-input input {width:100%;float:left;}
+		.labeled-input label {position:absolute;left:0;top:-16px;font-size:80%;}
+		
+		.card {box-shadow: 0 3px 10px 0 #000;border-radius: 1px;}
+	</style>
+	
+</head>
+<body style="background-image: url('./js/bg.png'); background-repeat: repeat; background-size: auto;">
+	<div class="card" style="background-color:#3e7ac3;color:#fff;margin-bottom:32px;">
+		<div class="center container">
+			<a onclick="$('#advance_search').toggle();" style="float:right;line-height:66px;">Advanced Search</a>
+			<div style="font-size:36px;padding:12px 24px;">Findr</div>
+		</div>
+	</div>
+	
+	<div class="center container">
+	
+		<div id="advance_search" class="card" style="background:white;padding:24px;display: none;">
+			<span style="font-size:24px;">Search devices</span>
+			<div class="row" style="margin-top:28px;">
+				<div class="col s4">
+					<div class="labeled-input">
+						<input id="network" value="192.168.1." />
+						<label>Local Network</label>
+					</div>
+				</div><div class="col s4">
+					<div class="labeled-input">
+						<input id="port" value="8878"/>
+						<label>Service Port</label>
+					</div>
+				</div><div class="col s4">	
+					<div class="labeled-input">
+						<input id="endpoint" value="search"/>
+						<label>Service Endpoint</label>
+					</div>
+				</div>
+				
+				<div style="float:right;margin-top:12px;margin-right:4px;">
+					<button onclick="search()">Search</button>
+				</div>			
+				<div class="clear"></div>
+			</div>
+		</div>
+			
+		<div class="clear" style="margin-top:42px;"></div>
+			
+		<div class="card">
+			<div style="padding:12px;background-color:#3e7ac3;color:#fff;">
+				<div style="float:right;">
+					<select id="filter_results" onchange="change_filter_results();">
+						<option value="">All</option>
+						<option value="sync">Sync</option>
+						<option value="connected">Non-Sync</option>
+					</select>
+				</div>
+				<span bind-html="current_devices.length"></span> connected devices. <span class="finding" bind-html="percent_search" bind-format="{{percent_search}.i}%"></span>
+			</div>
+			<div id="render_container" style="background:white;padding:12px;"><div>
+		</div>
+	</div>
+	
+	
+	<script>
+		
+		// USAGE:
+		init_bindings();
+	
+		var _findr = new Findr({
+			network: $("#network").val(),
+			service_port: $("#port").val(),
+			service_endpoint: $("#endpoint").val()
+		});
+		function search(){
+
+		    $('#advance_search').hide();
+
+			$(".finding").show();
+			current_devices = [];
+			percent_search = 0;
+
+			_findr.settings({
+				network: $("#network").val(),
+				service_port: $("#port").val(),
+				service_endpoint: $("#endpoint").val()
+			});
+			_findr.start(function(device, i){
+			    device.ip = $("#network").val() + i;
+			    if(device.status == "sync"){
+					//current_devices.push(device);
+					current_devices = current_devices.concat([device]);
+					add_device(device);
+				} else if(device.status == "connected"){
+					add_device(device);
+				}
+				percent_search = ((i+1) / 256) * 100;
+			}, function(){
+				$(".finding").hide();
+				var all_dev = _findr.get_devives();
+				var n_connected = 0;
+				for(var i in all_dev){
+					if(all_dev[i].status == "sync") n_connected++;
+				}
+				if(n_connected == 0) no_devices_found();
+			});
+			
+		}
+		
+		function connect(ip){
+			window.location = ip;
+		}
+		
+		// RENDERS 
+		var view_mode = "list";
+		function change_view(mode){
+			view_mode = mode;
+			render();
+		}
+		function render(){
+			var html = "";
+			if(view_mode == "list"){
+				html = '<table id="devices" style="width: 100%;">\
+					<thead><tr>\
+						<th>IP</th>\
+						<th>Hostname</th>\
+						<th>OS</th>\
+						<th>Uptime</th>\
+						<th width="1%">Connect</th>\
+					</tr></thead>\
+					<tbody></tbody>\
+				</table>';
+			} else {
+				html = '<div id="devices"></div>';
+			}
+			
+			for(var i in current_devices){
+				add_device(current_devices[i]);
+			}
+			
+			$("#render_container").html(html);
+		}
+		render();
+		function add_device(device){
+		    var system_os = device.system;
+		    if(system_os != undefined && system_os != 'Linux'){
+		        system_os += " " + device.os
+			}
+			if(view_mode == "list"){
+		        $("#devices tbody").append('\
+				<tr class="connection-type connection-type-'+device.status+'">\
+					<td>'+device.ip+'</td>\
+					<td>'+((device.hostname) ? device.hostname : "")+'</td>\
+					<td>'+((system_os) ? system_os : "") +'</td>\
+					<td>'+((device.uptime) ? millisecondsToStr(parseFloat(device.uptime) * 1000) : "")+'</td>\
+					<td>'+((device.hostname) ? '<button onclick="connect(\''+device.ip+'\');">Connect</button>' : "") + '</td>\
+				</tr>');
+			} else {
+				$("#devices").append('\
+				<div>\
+					<div>'+device.ip+'</div>\
+					<div>'+device.hostname+'</div>\
+					<div>'+device.os+'</div>\
+					<div>'+millisecondsToStr(parseFloat(device.uptime) * 1000)+'</div>\
+					<div><button onclick="connect(\''+device.ip+'\');">Connect</button></div>\
+				</div>');
+			}
+			change_filter_results();
+		}
+		function no_devices_found(){
+			if(view_mode == "list"){
+				$("#devices tbody").html('<tr><td colspan="6" class="center-text" style="font-size:18px;padding:24px;">No devices found.</td></tr>');
+			}else{
+				$("#devices").html('<div><div class="center-text" style="font-size:18px;padding:24px;">No devices found.</div></div>');
+			}
+		}
+
+		function change_filter_results(){
+
+		    if($("#filter_results").val() != ""){
+		        $(".connection-type").hide();
+		        $(".connection-type-" + $("#filter_results").val()).show();
+			} else {
+		        $(".connection-type").show();
+			}
+		}
+
+        function millisecondsToStr(milliseconds) {
+            // TIP: to find current time in milliseconds, use:
+            // var  current_time_milliseconds = new Date().getTime();
+
+            function numberEnding(number) {
+                return (number > 1) ? 's' : '';
+            }
+
+            var temp = Math.floor(milliseconds / 1000);
+            var years = Math.floor(temp / 31536000);
+            if (years) {
+                return years + ' year' + numberEnding(years);
+            }
+            //TODO: Months! Maybe weeks?
+            var days = Math.floor((temp %= 31536000) / 86400);
+            if (days) {
+                return days + ' day' + numberEnding(days);
+            }
+            var hours = Math.floor((temp %= 86400) / 3600);
+            if (hours) {
+                return hours + ' hour' + numberEnding(hours);
+            }
+            var minutes = Math.floor((temp %= 3600) / 60);
+            if (minutes) {
+                return minutes + ' minute' + numberEnding(minutes);
+            }
+            var seconds = temp % 60;
+            if (seconds) {
+                return seconds + ' second' + numberEnding(seconds);
+            }
+            return 'less than a second'; //'just now' //or other string you like;
+        }
+		function ip_local() {
+			var ip = false;
+			window.RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection || false;
+
+			if (window.RTCPeerConnection) {
+				ip = [];
+				var pc = new RTCPeerConnection({iceServers: []}), noop = function () {
+				};
+				pc.createDataChannel('');
+				pc.createOffer(pc.setLocalDescription.bind(pc), noop);
+
+				pc.onicecandidate = function (event) {
+					if (event && event.candidate && event.candidate.candidate) {
+						var s = event.candidate.candidate.split('\n');
+						ip.push(s[0].split(' ')[4]);
+					}
+				}
+			}
+
+			return ip;
+		}
+		// INIT
+		try {
+			var _ip = ip_local();
+			var network = _ip.substring(0, str.lastIndexOf(".") + 1);
+			$("#network").val(network);
+		} catch (e){
+			console.log('default network');
+		}
+		search();
+		
+		
+	</script>
+	
+</body>
+</html>
